@@ -7,10 +7,12 @@ from chat_app.domain.ports import ChatProvider
 
 
 class ProviderError(RuntimeError):
-    """Error recuperable al solicitar una respuesta a un proveedor."""
+    """Recoverable error returned by a provider adapter."""
 
 
 class AnthropicProvider:
+    """Adapter for the official Anthropic SDK."""
+
     def __init__(self, config: ProviderConfig) -> None:
         from anthropic import Anthropic
 
@@ -38,17 +40,19 @@ class AnthropicProvider:
                 request["system"] = system_prompt
             response = self.client.messages.create(**request)
         except Exception as exc:
-            raise ProviderError(f"No se pudo obtener respuesta de Anthropic: {exc}") from exc
+            raise ProviderError(f"Anthropic did not answer: {exc}") from exc
 
         text = "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
         if not text:
-            raise ProviderError("Anthropic no devolvió contenido de texto.")
+            raise ProviderError("Anthropic returned no text content.")
         return text
 
 
 class OpenAIProvider:
+    """Adapter for the official OpenAI SDK."""
+
     def __init__(self, config: ProviderConfig) -> None:
         from openai import OpenAI
 
@@ -78,18 +82,18 @@ class OpenAIProvider:
                 max_tokens=max_tokens,
             )
         except Exception as exc:
-            raise ProviderError(f"No se pudo obtener respuesta de OpenAI: {exc}") from exc
+            raise ProviderError(f"OpenAI did not answer: {exc}") from exc
 
         text = response.choices[0].message.content if response.choices else None
         if not text:
-            raise ProviderError("OpenAI no devolvió contenido de texto.")
+            raise ProviderError("OpenAI returned no text content.")
         return text
 
 
 def create_provider(config: ProviderConfig) -> ChatProvider:
-    """Crea el adaptador apropiado para la configuración resuelta."""
+    """Creates the adapter that matches the resolved configuration."""
     if config.provider == "anthropic":
         return AnthropicProvider(config)
     if config.provider == "openai":
         return OpenAIProvider(config)
-    raise ProviderError(f"No existe adaptador para el proveedor '{config.provider}'.")
+    raise ProviderError(f"No adapter available for provider '{config.provider}'.")

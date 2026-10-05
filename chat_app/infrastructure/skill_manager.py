@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -9,18 +11,17 @@ SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def validate_skill_name(name: str) -> str:
-    """Valida nombres portables y evita rutas fuera de ``skills/``."""
+    """Validates portable names and blocks paths outside ``skills/``."""
     normalized = name.strip().lower()
     if not SKILL_NAME_PATTERN.fullmatch(normalized):
         raise ValueError(
-            "El nombre de la skill debe usar kebab-case: letras minúsculas, "
-            "números y guiones simples."
+            "Skill names must be kebab-case: lowercase letters, digits and single hyphens."
         )
     return normalized
 
 
 def parse_skill_markdown(content: str) -> Dict[str, Any]:
-    """Parsea el frontmatter básico y las instrucciones de un archivo de skill."""
+    """Parses the basic frontmatter and instructions of a skill file."""
     frontmatter: Dict[str, str] = {}
     body = content
     match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
@@ -44,7 +45,7 @@ def parse_skill_markdown(content: str) -> Dict[str, Any]:
 
 
 def list_skills(skills_dir: Path = SKILLS_DIR) -> List[Dict[str, Any]]:
-    """Lista skills locales que contienen un archivo ``SKILL.md``."""
+    """Lists local skills that contain a ``SKILL.md`` file."""
     if not skills_dir.exists():
         return []
 
@@ -59,17 +60,19 @@ def list_skills(skills_dir: Path = SKILLS_DIR) -> List[Dict[str, Any]]:
                     data["file_path"] = str(skill_file)
                     skills.append(data)
                 except Exception as exc:
-                    skills.append({
-                        "dir_name": item.name,
-                        "file_path": str(skill_file),
-                        "name": item.name,
-                        "error": str(exc),
-                    })
+                    skills.append(
+                        {
+                            "dir_name": item.name,
+                            "file_path": str(skill_file),
+                            "name": item.name,
+                            "error": str(exc),
+                        }
+                    )
     return skills
 
 
 def load_skill(name_or_dir: str, skills_dir: Path = SKILLS_DIR) -> Optional[Dict[str, Any]]:
-    """Carga una skill por su nombre o por el nombre de su directorio."""
+    """Loads a skill by its name or by its directory name."""
     for skill in list_skills(skills_dir):
         if skill.get("name") == name_or_dir or skill.get("dir_name") == name_or_dir:
             return skill
@@ -77,18 +80,18 @@ def load_skill(name_or_dir: str, skills_dir: Path = SKILLS_DIR) -> Optional[Dict
 
 
 def get_skill_system_prompt(name_or_dir: str, skills_dir: Path = SKILLS_DIR) -> str:
-    """Genera las instrucciones de sistema para una skill local."""
+    """Builds the system instructions for a local skill."""
     skill = load_skill(name_or_dir, skills_dir)
     if not skill:
-        raise ValueError(f"Skill '{name_or_dir}' no encontrada en {skills_dir}")
+        raise ValueError(f"Skill '{name_or_dir}' not found in {skills_dir}")
 
     instructions = skill.get("instructions", "")
     name = skill.get("name") or skill.get("dir_name")
     description = skill.get("description", "")
-    system_prompt = f"Eres un asistente especializado ejecutando la Skill '{name}'.\n"
+    system_prompt = f"You are a specialist running the '{name}' skill.\n"
     if description:
-        system_prompt += f"Propósito de la Skill: {description}\n\n"
-    system_prompt += "Sigue rigurosamente las siguientes directrices y reglas:\n"
+        system_prompt += f"Skill purpose: {description}\n\n"
+    system_prompt += "Follow these guidelines and rules strictly:\n"
     return system_prompt + instructions
 
 
@@ -99,13 +102,13 @@ def create_skill(
     rules: List[str],
     skills_dir: Path = SKILLS_DIR,
 ) -> Path:
-    """Crea una skill local en formato Markdown."""
+    """Creates a local skill written as Markdown."""
     name = validate_skill_name(name)
     skill_folder = skills_dir / name
     skill_file = skill_folder / "SKILL.md"
     if skill_file.exists():
         raise FileExistsError(
-            f"Ya existe una skill llamada '{name}'. Elige otro nombre para no sobrescribirla."
+            f"A skill named '{name}' already exists. Choose another name to avoid overwriting it."
         )
 
     skill_folder.mkdir(parents=True, exist_ok=True)
@@ -117,11 +120,11 @@ description: {description}
 
 # {name.replace('-', ' ').title()}
 
-## Objetivo
+## Purpose
 
 {objective}
 
-## Instrucciones
+## Instructions
 
 {rules_formatted}
 """

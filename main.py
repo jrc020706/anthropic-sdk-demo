@@ -1,4 +1,4 @@
-"""Punto de entrada del chat multiproveedor."""
+"""Entry point of the multi-provider terminal chat."""
 
 from chat import main
 

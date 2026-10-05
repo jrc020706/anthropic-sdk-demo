@@ -1,1 +1,1 @@
-"""Casos de uso y servicios de aplicación."""
+"""Use cases of the chat application."""

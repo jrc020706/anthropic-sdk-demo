@@ -1,1 +1,1 @@
-"""Aplicación de chat multiproveedor con skills."""
+"""Multi-provider chat application with skills."""

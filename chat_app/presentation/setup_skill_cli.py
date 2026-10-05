@@ -2,15 +2,15 @@ from chat_app.infrastructure.skill_manager import list_skills
 
 
 def main() -> None:
-    print("=== Configuración y Verificación de Skills ===\n")
+    print("=== Skill Setup and Check ===\n")
     skills = list_skills()
     if not skills:
-        print("No se encontraron skills en el directorio 'skills/'.")
+        print("No skills were found in the 'skills/' directory.")
         return
-    print(f"Se encontraron {len(skills)} skill(s) locales:")
+    print(f"Found {len(skills)} local skill(s):")
     for skill in skills:
         print(f"  - [{skill['name']}]: {skill['description']}")
-        print(f"    Ruta: {skill['file_path']}")
-    print("\nLas skills locales se cargan como instrucciones de sistema.")
-    print("  Chat: python main.py --skill <nombre-de-skill>")
-    print("  Consulta puntual: python run_skill.py --skill <nombre-de-skill> --prompt <tu-consulta>")
+        print(f"    Path: {skill['file_path']}")
+    print("\nLocal skills are loaded as system instructions.")
+    print("  Chat: python main.py --skill <skill-name>")
+    print("  One-off query: python run_skill.py --skill <skill-name> --prompt <your-question>")

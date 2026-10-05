@@ -1,4 +1,4 @@
-"""Compatibilidad de imports para las skills locales."""
+"""Import-compatible facade for the local skills."""
 
 from chat_app.infrastructure.skill_manager import (
     BASE_DIR,

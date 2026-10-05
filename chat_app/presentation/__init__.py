@@ -1,1 +1,1 @@
-"""Interfaces de línea de comandos."""
+"""Command line interfaces."""

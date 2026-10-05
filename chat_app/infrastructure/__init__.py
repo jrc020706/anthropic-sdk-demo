@@ -1,1 +1,1 @@
-"""Adaptadores de proveedores y persistencia local."""
+"""Adapters for providers, storage and the knowledge base."""

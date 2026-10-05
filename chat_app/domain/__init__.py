@@ -1,1 +1,1 @@
-"""Tipos y contratos del dominio."""
+"""Domain models and ports of the application."""

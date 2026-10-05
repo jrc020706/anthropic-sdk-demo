@@ -4,55 +4,55 @@ from chat_app.infrastructure.skill_manager import create_skill
 
 
 def interactive_create() -> None:
-    print("=== Creador Interactivo de Skills ===\n")
-    name = input("Nombre de la Skill (kebab-case, ej: sql-expert): ").strip().lower()
+    print("=== Interactive Skill Creator ===\n")
+    name = input("Skill name (kebab-case, e.g. sql-expert): ").strip().lower()
     if not name:
-        print("El nombre es obligatorio.")
+        print("The name is required.")
         return
-    description = input("Descripción breve (qué hace y cuándo usarla): ").strip()
+    description = input("Short description (what it does and when to use it): ").strip()
     if not description:
-        print("La descripción es obligatoria.")
+        print("The description is required.")
         return
-    objective = input("Objetivo principal de la Skill: ").strip()
+    objective = input("Main purpose of the skill: ").strip()
     if not objective:
-        objective = f"Asistir al usuario en tareas relacionadas con {name}."
+        objective = f"Help the user with tasks related to {name}."
 
-    print("\nIngresa las reglas o directrices (una por línea). Presiona Enter con línea vacía para terminar:")
+    print("\n Enter the rules, one per line. Press Enter on an empty line to finish:")
     rules = []
     while True:
-        rule = input(f"  Regla {len(rules) + 1}: ").strip()
+        rule = input(f"  Rule {len(rules) + 1}: ").strip()
         if not rule:
             break
         rules.append(rule)
     if not rules:
-        rules = ["Proporcionar respuestas claras, correctas y profesionales."]
+        rules = ["Provide clear, correct and professional answers."]
 
     try:
         file_path = create_skill(name, description, objective, rules)
     except (ValueError, FileExistsError) as exc:
         print(f"Error: {exc}")
         return
-    print(f"\nSkill '{name}' creada con éxito en:\n  {file_path}")
-    print(f"\nPuedes probarla ejecutando:\n  python run_skill.py --skill {name} --prompt 'Tu pregunta'")
+    print(f"\nSkill '{name}' created at:\n  {file_path}")
+    print(f"\nTry it with:\n  python run_skill.py --skill {name} --prompt 'Your question'")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Crear una nueva Skill para el proyecto.")
-    parser.add_argument("--name", "-n", type=str, help="Nombre de la skill (kebab-case)")
-    parser.add_argument("--desc", "-d", type=str, help="Descripción breve de la skill")
-    parser.add_argument("--objective", "-o", type=str, help="Objetivo principal")
-    parser.add_argument("--rule", "-r", action="append", help="Regla para la skill (puede repetirse)")
+    parser = argparse.ArgumentParser(description="Create a new skill for the project.")
+    parser.add_argument("--name", "-n", type=str, help="Skill name (kebab-case)")
+    parser.add_argument("--desc", "-d", type=str, help="Short description")
+    parser.add_argument("--objective", "-o", type=str, help="Main purpose")
+    parser.add_argument("--rule", "-r", action="append", help="Rule for the skill (repeatable)")
     args = parser.parse_args()
 
     if not args.name:
         interactive_create()
         return
     name = args.name.strip().lower()
-    description = (args.desc or f"Especialista en {name}").strip()
-    objective = (args.objective or f"Asistir al usuario en tareas relacionadas con {name}.").strip()
-    rules = args.rule or ["Proporcionar respuestas claras, correctas y profesionales."]
+    description = (args.desc or f"Specialist in {name}").strip()
+    objective = (args.objective or f"Help the user with tasks related to {name}.").strip()
+    rules = args.rule or ["Provide clear, correct and professional answers."]
     try:
         file_path = create_skill(name, description, objective, rules)
     except (ValueError, FileExistsError) as exc:
         parser.error(str(exc))
-    print(f"Skill '{name}' creada exitosamente en: {file_path}")
+    print(f"Skill '{name}' created at: {file_path}")

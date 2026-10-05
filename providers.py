@@ -1,4 +1,4 @@
-"""Compatibilidad de imports para los proveedores de chat."""
+"""Import-compatible facade for the chat providers."""
 
 from chat_app.domain.models import ChatMessage
 from chat_app.domain.ports import ChatProvider

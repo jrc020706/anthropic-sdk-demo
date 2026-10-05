@@ -1,4 +1,4 @@
-"""Lanzador compatible para consultas puntuales con una skill."""
+"""Entry point for a one-off query using a skill."""
 
 from chat_app.presentation.skill_cli import main, run_with_skill
 

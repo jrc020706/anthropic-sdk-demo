@@ -1,165 +1,370 @@
-# Chat multiproveedor con Skills
+# Multi-Provider Terminal Chatbot with Memory, RAG and AI-Assisted Development
 
-Chat de terminal para Anthropic y OpenAI, con historial de conversación y **skills** locales que se usan como instrucciones de sistema. También permite consultas puntuales con una skill.
+A terminal chatbot that talks to **Anthropic** and **OpenAI** through one shared provider
+contract, keeps a rolling window of the 10 most recent messages, stores complete
+sessions in SQLite so they survive restarts, answers from a local document knowledge
+base hosted in **Supabase (pgvector)**, and ships reusable skills plus a full log of
+the AI prompts used to build it.
 
----
-
-## 📋 Requisitos y Configuración
-
-1. **Activar el entorno virtual:**
-   ```bash
-   source .venv/bin/activate
-   ```
-
-   Si el entorno no tiene el ejecutable `python` porque fue creado con una versión de Python que ya no está instalada, consérvalo como respaldo y crea uno nuevo antes de instalar dependencias:
-   ```bash
-   mv .venv .venv-respaldo
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-2. **Variables de entorno:**
-   Copia [`.env.example`](.env.example) a `.env` y configura al menos un proveedor:
-   ```env
-   CHAT_PROVIDER=anthropic
-   ANTHROPIC_API_KEY=tu-api-key
-   ANTHROPIC_BASE_URL=http://localhost:20128
-   ```
-
-   Para OpenAI usa `OPENAI_API_KEY` y, si corresponde, `OPENAI_BASE_URL`. Una URL base de OpenAI puede tener `/v1` o no; el programa la normaliza. `ANTHROPIC_BASE_URL` puede apuntar a un gateway compatible con Anthropic. Define `ANTHROPIC_MODEL` u `OPENAI_MODEL` si quieres fijar un modelo por proveedor; `CHAT_MODEL` solo determina el modelo de inicio del chat.
-
-3. **Dependencias:**
-   Registradas en [requirements.txt](requirements.txt). Si necesitas reinstalarlas en un entorno limpio:
-   ```bash
-   pip install -r requirements.txt
-   ```
+The requirements come from
+[`Riwi_MultiProvider_Terminal_Chatbot_Acceptance_Criteria_Final.pdf`](Riwi_MultiProvider_Terminal_Chatbot_Acceptance_Criteria_Final.pdf);
+section 10 maps the repository to that checklist.
 
 ---
 
-## 🚀 Uso Rápido
+## 1. Deployed services
 
-### 1. Chat interactivo
+The chatbot runs locally, but every service it consumes is a hosted service reachable
+through a documented URL. No service dependency is localhost-only.
+
+| Service | Purpose | URL | Environment variables |
+| --- | --- | --- | --- |
+| Anthropic API | Chat provider (required) | `https://api.anthropic.com` | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_BASE_URL` (optional) |
+| OpenAI API | Chat provider + RAG embeddings (required) | `https://api.openai.com/v1` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `EMBEDDING_MODEL`, `OPENAI_BASE_URL` (optional) |
+| Supabase (PostgreSQL + pgvector) | Vector database for RAG (required for RAG) | `https://<project-ref>.supabase.co` | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_TABLE` (optional) |
+| SQLite file | Saved chats, stored on your machine | local file `data/chats.db` | `CHAT_DB_PATH` (optional) |
+
+Documentation of each service: [Anthropic docs](https://docs.anthropic.com/),
+[OpenAI docs](https://platform.openai.com/docs/), [Supabase docs](https://supabase.com/docs).
+
+No secret is written in this file. All credentials live in `.env`, which is ignored by git.
+
+---
+
+## 2. Setup
+
+### Requirements
+
+- Python 3.10+
+- An Anthropic API key and an OpenAI API key
+- A hosted Supabase project (free tier is enough) for the knowledge base
+
+### Install
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+If your interpreter was created with a Python version that is no longer installed,
+keep the old environment as a backup and create a new one:
+
+```bash
+mv .venv .venv-respaldo
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Configure
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set at least:
+
+```env
+CHAT_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your-anthropic-api-key
+OPENAI_API_KEY=your-openai-api-key
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+```
+
+Every variable is documented inline in [`.env.example`](.env.example).
+
+### Create the vector database (once per Supabase project)
+
+1. Open your Supabase project → **SQL Editor** → **New query**.
+2. Paste the contents of [`data/supabase/schema.sql`](data/supabase/schema.sql).
+3. Run it. It creates the `documents` table, the HNSW index and the
+   `match_documents` function.
+
+---
+
+## 3. Knowledge-base ingestion
+
+Documents live in [`data/documents/`](data/documents/). Supported formats: `.md`,
+`.markdown`, `.txt`, `.text` and `.pdf`.
+
+```bash
+# Embed and store every document (load -> chunk -> overlap -> embed -> store)
+python ingest.py
+
+# Show the chunk sizes and overlaps without calling any external service
+python ingest.py --preview
+
+# Drop the index first and ingest everything again
+python ingest.py --rebuild
+
+# Ingest a single document
+python ingest.py --only getting-started.md
+
+# Tune the chunking baseline (500-800 tokens, 10-20% overlap)
+python ingest.py --chunk-tokens 700 --overlap 0.20
+```
+
+Each document prints one line: `[ok]`, `[skipped]` (unsupported type or empty file) or
+`[error]`. A failed document never interrupts the rest of the ingestion.
+
+Chunking defaults: **600 tokens per chunk** with **15% overlap**, snapped to paragraph,
+line or sentence boundaries. Embeddings use `text-embedding-3-small` (1536 dimensions)
+through the official OpenAI SDK. Every stored chunk carries its `source`, `document`,
+`chunk_index` and `chunk_tokens` metadata.
+
+---
+
+## 4. Running the chatbot
+
+One documented command:
 
 ```bash
 python main.py
 ```
 
-Durante el chat puedes usar `/help`, `/provider openai`, `/model <modelo>`, `/skill <nombre>`, `/new` y `/exit`. El historial se conserva durante la sesión y mantiene hasta 20 mensajes recientes como contexto.
+The chat accepts messages until you type `/exit`. The first line of the session shows
+the active provider, model, skill, context size, session id and whether RAG is on.
 
-Para iniciar con otro proveedor, modelo o skill:
+Start it with explicit options if you want:
 
 ```bash
 python main.py --provider openai --model gpt-4o-mini --skill python-helper
+python main.py --max-tokens 1500 --history-limit 10
 ```
 
-### 2. Listar Skills Disponibles
-```bash
-python run_skill.py --list
-```
+### Commands
 
-### 3. Ejecutar una Consulta con una Skill
-```bash
-python run_skill.py --skill python-helper --prompt "Cómo hacer un generador en Python"
-```
-También puede elegir proveedor y modelo:
+| Command | What it does |
+| --- | --- |
+| `/help` | Show the command list |
+| `/status` | Active provider, model, skill, context `n/10`, session id, RAG on/off |
+| `/providers` | List the compiled providers |
+| `/provider <name>` | Switch provider (`anthropic` / `openai`) and start a new conversation |
+| `/model <name>` | Change the model of the current provider |
+| `/memory` | Inspect the active 10-message context window |
+| `/chats` | List saved sessions by stable id (active one marked `*`) |
+| `/resume <session-id>` | Continue a saved session |
+| `/skills` | List the installed skills |
+| `/skill <name\|none>` | Enable a skill or disable it |
+| `/rag` | Show knowledge-base status: stored chunks, top_k, threshold, embedding model |
+| `/new` | Start a new conversation (the previous one stays saved) |
+| `/exit` | Close the chat |
 
-```bash
-python run_skill.py --provider openai --model gpt-4o-mini --max-tokens 800 --skill python-helper --prompt "Cómo hacer un generador en Python"
-```
-O de forma interactiva (te mostrará el menú para elegir la skill y escribir tu pregunta):
-```bash
-python run_skill.py
-```
+### Provider switching
+
+The same conversation flow runs on both providers because they share one provider
+contract; the conversation logic is never duplicated.
+
+- Persistently: set `CHAT_PROVIDER=anthropic` or `CHAT_PROVIDER=openai` in `.env`.
+- Per run: `python main.py --provider openai`.
+- During the session: `/provider anthropic` (this starts a new conversation, so the
+  provider stored in a saved session stays consistent).
+
+### Saved chats and memory
+
+- The active context is a rolling window of the **10 most recent user/assistant
+  messages**. Older messages are dropped, and every model call sends only the system
+  instructions plus that window.
+- `/memory` prints the window content and its size.
+- Complete sessions are stored in `data/chats.db` (SQLite) and survive restarts.
+- `/chats` lists them with a stable id, provider, model, message count and update time.
+- `/resume <session-id>` reloads the full stored history, rebuilds the active context
+  from the last 10 messages, adopts the saved provider/model and writes new messages
+  back to the same session.
 
 ---
 
-## 🛠️ Cómo Crear Nuevas Skills
+## 5. Testing the RAG flow
 
-Puedes crear nuevas skills de dos formas:
+1. **Ingest**: `python ingest.py` → every document must report `[ok]`.
+2. **Check the index**: `python main.py`, then `/rag` → it must report the stored
+   chunk count, the top_k (default 5) and the relevance threshold (default 0.20).
+3. **Retrieve**: ask a question covered by the documents, for example
+   *"How do I create the Supabase tables?"* or
+   *"What does /resume rebuild the context from?"*. The answer must be followed by a
+   `Sources:` line with the file name and its relevance score.
+4. **No invention**: ask something outside the documents, for example
+   *"What is the population of Bolivia?"*. The chatbot must answer that there is not
+   enough information in the knowledge base instead of inventing content.
+5. **Failure path**: remove `SUPABASE_URL` from `.env`, restart the chat and send a
+   message. You get a `RAG warning` line and the conversation keeps working.
 
-### Opción A: Modo Interactivo
+You can also inspect chunking without credentials: `python ingest.py --preview`.
+
+### Offline verification (no credentials needed)
+
+```bash
+python tests/run_offline_checks.py
+```
+
+It checks the 10-message window, the persistence and `/resume` behaviour, the RAG
+wiring (chunks and their source metadata reaching the system prompt), the recoverable
+failure paths and the 500-800 token / 10-20% overlap chunking baseline.
+
+---
+
+## 6. Custom skills
+
+Two reusable skills live in [`skills/`](skills/). Each `SKILL.md` documents its
+**purpose**, **expected input**, **expected output**, **how to invoke** it and its
+numbered instructions.
+
+| Skill | Purpose | Typical input | Expected output |
+| --- | --- | --- | --- |
+| `python-helper` | Explain, write and debug Python code | A Python question, snippet or bug report | Diagnosis first, runnable code, explanation of the important parts |
+| `sql-expert` | SQL queries, schema review and index tuning | A query, schema or performance problem | SQL first (uppercase keywords), explanation, dialect and index advice |
+
+### Working demo
+
+```bash
+# Inside the chat
+/skill python-helper
+/skill sql-expert
+/skill none
+
+# Starting the chat with a skill
+python main.py --skill python-helper
+
+# One-off query without opening the chat
+python run_skill.py --list
+python run_skill.py --skill python-helper --prompt "How do I write a generator in Python?"
+python run_skill.py --skill sql-expert --prompt "How do I index a table for reporting?"
+
+# Inspect the installed skills
+python setup_skill.py
+```
+
+### Creating a new skill
+
 ```bash
 python create_skill.py
 ```
-Te solicitará paso a paso:
-* Nombre (kebab-case, ej: `api-designer`)
-* Descripción breve
-* Objetivo principal
-* Lista de reglas numeradas
 
-### Opción B: Mediante Línea de Comandos
 ```bash
 python create_skill.py \
   --name "docker-expert" \
-  --desc "Especialista en contenedores Docker y Docker Compose" \
-  --objective "Ayudar a crear Dockerfiles y orquestación multi-contenedor" \
-  --rule "Usa siempre imágenes base oficiales y ligeras (alpine/slim)" \
-  --rule "Aplica multi-stage builds para optimizar el tamaño final" \
-  --rule "Muestra el Dockerfile o docker-compose.yml completo al inicio"
+  --desc "Docker and Docker Compose specialist" \
+  --objective "Help build Dockerfiles and multi-container orchestration" \
+  --rule "Always use official lightweight base images"
 ```
 
-### Opción C: Creación Manual
-Crea una carpeta en `skills/<nombre-de-tu-skill>/` con un archivo `SKILL.md`:
-```markdown
----
-name: mi-skill
-description: Breve descripción de qué hace y cuándo usarla
----
-
-# Mi Skill
-
-## Objetivo
-Objetivo principal de la skill.
-
-## Instrucciones
-1. Regla o directriz 1.
-2. Regla o directriz 2.
-```
-
-Los nombres de skills usan `kebab-case` y no se sobrescriben por accidente: elige un nombre distinto si ya existe una carpeta con esa skill.
+Skill names are kebab-case and are never overwritten by accident.
 
 ---
 
-## 🧱 Arquitectura
+## 7. AI-assisted development trace
 
-El código de aplicación está organizado con **Clean Architecture**. Las dependencias apuntan hacia el núcleo: dominio y casos de uso no dependen de SDKs, terminal ni sistema de archivos. `presentation/composition.py` conecta los puertos con sus adaptadores concretos.
+Everything about the coding assistants, models and tools used to build this project is
+recorded in [`coding-assistance/`](coding-assistance/):
+
+- [`coding-assistance/README.md`](coding-assistance/README.md) — which agents, models
+  and tools were used and for what.
+- [`coding-assistance/prompts.jsonl`](coding-assistance/prompts.jsonl) — one JSON line
+  per prompt sent to an AI coding assistant, with `timestamp`, `agent`, `tool`,
+  `model`, `prompt` and `purpose`.
+
+No API key, token or password is stored in that log.
+
+---
+
+## 8. Project structure
 
 ```text
 chat_app/
 ├── domain/
-│   ├── models.py                 # Tipos del dominio y configuración común
-│   └── ports.py                  # Contrato del proveedor y tipos de conexión
+│   ├── models.py                 # ChatMessage, ProviderConfig, RetrievedChunk, SessionSummary
+│   └── ports.py                  # ChatProvider, SessionStore, Retriever contracts
 ├── application/
-│   ├── chat_session.py           # Caso de uso del chat e historial
-│   ├── prompt_design.py          # Diseño adaptativo del prompt de sistema
-│   └── skill_query.py            # Caso de uso de consulta puntual
+│   ├── chat_session.py           # Conversation use case: 10-message window + RAG + persistence
+│   ├── prompt_design.py          # System instructions (general, skill mode, RAG context)
+│   └── skill_query.py            # One-off skill query
 ├── infrastructure/
-│   ├── config.py                 # Variables de entorno y configuración
-│   ├── providers.py              # Adaptadores Anthropic y OpenAI
-│   └── skill_manager.py         # Lectura y creación de skills en disco
+│   ├── config.py                 # Environment variables and validation
+│   ├── providers.py              # Anthropic and OpenAI adapters (official SDKs)
+│   ├── session_store.py          # SQLite store for saved chats
+│   ├── skill_manager.py          # Skill reading and creation
+│   └── rag/
+│       ├── loaders.py            # .md / .txt / .pdf readers + unsupported types
+│       ├── chunking.py           # Token chunking with overlap and boundary snapping
+│       ├── embeddings.py         # Official OpenAI embeddings endpoint
+│       ├── vector_store.py       # Supabase + pgvector storage and similarity search
+│       ├── retriever.py          # Query -> embed -> search -> top-k chunks with sources
+│       └── ingestion.py          # Per-document load -> chunk -> embed -> store
 └── presentation/
-      ├── chat_cli.py               # Interfaz interactiva del chat
-      ├── skill_cli.py              # Interfaz de consulta puntual
-      ├── create_skill_cli.py       # Interfaz para crear skills
-      ├── setup_skill_cli.py        # Inspección de skills instaladas
-      └── composition.py            # Ensamblado de dependencias
+    ├── chat_cli.py               # Interactive terminal chat
+    ├── ingest_cli.py             # Ingestion command line
+    ├── skill_cli.py              # One-off skill query
+    ├── create_skill_cli.py       # Interactive skill creator
+    ├── setup_skill_cli.py        # Installed skill inspector
+    └── composition.py            # Wires ports to adapters and collects warnings
 
-main.py, run_skill.py, create_skill.py y setup_skill.py son los puntos de entrada existentes. Los módulos de raíz `chat.py`, `config.py`, `providers.py` y `skill_manager.py` se conservan como fachadas para no romper imports previos.
+main.py        # python main.py      -> interactive chat
+ingest.py      # python ingest.py    -> knowledge-base ingestion
+run_skill.py   # python run_skill.py -> one-off skill query
+create_skill.py / setup_skill.py    # skill tooling
+tests/run_offline_checks.py         # offline acceptance checks (no credentials)
 
-## 🧠 Prompt Design adaptativo (PD)
+data/
+├── documents/                    # Knowledge-base source documents
+├── supabase/schema.sql           # pgvector table, index and match_documents function
+└── chats.db                      # Saved chats (created at run time, never committed)
 
-`AdaptivePromptDesigner` genera las instrucciones de sistema según el contexto de ejecución:
+skills/                           # Reusable custom skills
+coding-assistance/                # AI development trace (README + prompts.jsonl)
+```
 
-* **Modo general:** orienta al modelo para identificar la intención y responder con una profundidad proporcional, sin forzar una especialidad.
-* **Modo especializado:** combina esas pautas con las instrucciones de la skill activa.
-* En ambos modos solicita respetar el formato indicado, distinguir preguntas directas de tareas de análisis o código, y pedir aclaraciones cuando falte información imprescindible.
+The root modules `chat.py`, `config.py`, `providers.py` and `skill_manager.py` are kept
+as facades so previous imports keep working.
 
-El modo especializado se activa con `--skill <nombre>` al iniciar el chat, con `/skill <nombre>` durante la sesión o mediante `run_skill.py`. No se añade una llamada extra al modelo para clasificar la petición; el proveedor recibe un único prompt de sistema compuesto por la aplicación.
+---
 
-## 📂 Recursos
+## 9. Failure handling
 
-* [main.py](main.py) — Punto de entrada del chat interactivo.
-* [skills/](skills/) — Skills locales cargadas por el adaptador de infraestructura:
-   * [skills/python-helper/SKILL.md](skills/python-helper/SKILL.md) — Asistente de Python para explicaciones claras y código limpio.
-   * [skills/sql-expert/SKILL.md](skills/sql-expert/SKILL.md) — Especialista en SQL, consultas optimizadas e índices.
+Recoverable problems are printed in the terminal and **never terminate the chat**:
+
+| Problem | Message you get |
+| --- | --- |
+| Missing `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | The exact variable to add to `.env` |
+| Missing `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Knowledge base disabled, chat keeps working |
+| Provider or API failure | The provider error, and the session stays open |
+| Missing Supabase table or `match_documents` | Pointer to `data/supabase/schema.sql` |
+| Empty retrieval | The answer states there is not enough information |
+| Unsupported document | `[skipped]` with the reason; the other files still ingest |
+| SQLite failure | `Storage warning`, the chat continues in memory |
+| Ctrl+C during a request | Request cancelled, session preserved |
+
+---
+
+## 10. Acceptance checklist
+
+```bash
+# 0. Offline checks: memory window, saved chats, /resume, RAG wiring, chunking
+python tests/run_offline_checks.py
+
+# 1. Runs from the terminal following this README
+python main.py
+
+# 2. Both providers share the same flow
+/provider openai    # then /provider anthropic
+
+# 3. Memory window and saved chats
+/memory
+/chats
+/restart-free check: exit, run python main.py again, then /chats
+
+# 4. RAG
+python ingest.py
+python main.py      # then /rag, ask a documented question, ask an unrelated one
+
+# 5. Skills
+python run_skill.py --skill python-helper --prompt "Explain list comprehensions"
+python run_skill.py --list
+
+# 6. AI trace
+cat coding-assistance/prompts.jsonl
+
+# 7. No secrets in the repository
+grep -rniE "sk-[a-z0-9]{10}|service_key *= *['\"][a-z0-9]" --include="*.py" --include="*.md" .
+```

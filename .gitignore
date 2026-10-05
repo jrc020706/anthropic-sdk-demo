@@ -1,3 +1,11 @@
 .env
 .venv/
+.venv-respaldo/
 __pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local database with saved chats (never commit conversation data)
+data/chats.db
+data/chats.db-*
