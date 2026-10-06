@@ -19,7 +19,7 @@ HELP = """Commands:
   /help                    Show this help.
   /status                  Show the configuration of the session.
   /providers               List the supported providers.
-  /provider <name>         Switch between anthropic and openai.
+  /provider <name>         Switch the active provider (see /providers).
   /model <name>            Change the model of the current provider.
   /memory                  Inspect the active 10-message context window.
   /chats                   List saved sessions by their stable id.

@@ -51,7 +51,11 @@ class AnthropicProvider:
 
 
 class OpenAIProvider:
-    """Adapter for the official OpenAI SDK."""
+    """Adapter for the official OpenAI SDK.
+
+    Also serves OpenAI-compatible providers such as Groq and OpenRouter, so the
+    conversation logic stays in one place for every provider.
+    """
 
     def __init__(self, config: ProviderConfig) -> None:
         from openai import OpenAI
@@ -90,10 +94,14 @@ class OpenAIProvider:
         return text
 
 
+# OpenAI-compatible providers served by the official OpenAI SDK adapter.
+OPENAI_COMPATIBLE_PROVIDERS = ("groq", "openrouter")
+
+
 def create_provider(config: ProviderConfig) -> ChatProvider:
     """Creates the adapter that matches the resolved configuration."""
     if config.provider == "anthropic":
         return AnthropicProvider(config)
-    if config.provider == "openai":
+    if config.provider == "openai" or config.provider in OPENAI_COMPATIBLE_PROVIDERS:
         return OpenAIProvider(config)
     raise ProviderError(f"No adapter available for provider '{config.provider}'.")

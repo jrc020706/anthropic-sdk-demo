@@ -46,8 +46,9 @@ Optional fields are added when they carry useful context, for example
 | Agent / tool | Model | Used for |
 | --- | --- | --- |
 | OpenCode (CLI coding agent) | `mimo-v2.6-flash-free` (MiMo-V2.6-Flash Free, provider `opencode`) | Reading the acceptance-criteria PDF, designing and writing the session/memory layer, the Supabase + pgvector RAG pipeline, the terminal commands, the skills documentation, `.env.example`, `requirements.txt` and the README |
+| OpenCode (CLI coding agent) | `z-ai/glm-5.3` (provider `nvidia`) | Verifying the acceptance criteria offline, adding the free-tier providers (Groq, OpenRouter) and the free embeddings override, refreshing the README and `.env.example`, and removing the requirements PDF from the repository |
 | OpenCode file and shell tools | n/a (harness tools) | Running the smoke tests, the ingestion preview and the CLI checks used to verify each acceptance criterion |
-| `pdftotext` (Poppler) | n/a (not an AI tool) | Extracting the text of `Riwi_MultiProvider_Terminal_Chatbot_Acceptance_Criteria_Final.pdf` so the agent could read the acceptance criteria |
+| `pdftotext` (Poppler) | n/a (not an AI tool) | Extracting the text of the acceptance-criteria PDF so the agent could read it (the PDF was removed from the repository after the alignment was verified) |
 
 ### Initial version of the project (commit `1ea5aae`, 2026-10-05)
 

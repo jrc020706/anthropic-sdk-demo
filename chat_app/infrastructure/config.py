@@ -21,6 +21,16 @@ class ConfigurationError(ValueError):
 DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-5",
     "openai": "gpt-4o-mini",
+    # Free-tier providers (OpenAI-compatible; they reuse the official OpenAI SDK).
+    "groq": "llama-3.1-8b-instant",
+    "openrouter": "meta-llama/llama-3.3-70b-instruct:free",
+}
+# Default endpoints of the OpenAI-compatible providers. They can still be
+# overridden with <PROVIDER>_BASE_URL. Anthropic and OpenAI call their official
+# API when <PROVIDER>_BASE_URL is unset.
+DEFAULT_BASE_URLS = {
+    "groq": "https://api.groq.com/openai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
 }
 SUPPORTED_PROVIDERS = tuple(DEFAULT_MODELS)
 
@@ -68,7 +78,7 @@ def resolve_provider_config(
     return ProviderConfig(
         provider=selected,
         api_key=api_key,
-        base_url=_optional_url(f"{env_prefix}_BASE_URL"),
+        base_url=_optional_url(f"{env_prefix}_BASE_URL") or DEFAULT_BASE_URLS.get(selected),
         model=selected_model,
     )
 

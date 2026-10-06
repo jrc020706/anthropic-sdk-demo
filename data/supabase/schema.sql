@@ -6,6 +6,10 @@
 create extension if not exists vector;
 
 -- 2. Document chunks ---------------------------------------------------------
+-- The vector dimension must match your EMBEDDING_MODEL:
+--   text-embedding-3-small (OpenAI, default)  -> vector(1536) as written below
+--   text-embedding-004 (Google, free tier)    -> replace 1536 with 768
+--   (also in the match_documents function signature below)
 create table if not exists documents (
     id         bigserial primary key,
     content    text        not null,

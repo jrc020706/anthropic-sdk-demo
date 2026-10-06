@@ -24,18 +24,27 @@ class OpenAIEmbedder:
         dimensions: Optional[int] = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
     ) -> None:
-        key = (api_key or os.getenv("OPENAI_API_KEY", "")).strip()
+        key = (api_key or os.getenv("EMBEDDING_API_KEY", "")).strip() or os.getenv(
+            "OPENAI_API_KEY", ""
+        ).strip()
         if not key:
             raise EmbeddingError(
-                "RAG is disabled: OPENAI_API_KEY is missing. "
-                "Add it to .env to embed documents and queries."
+                "RAG is disabled: no embedding API key. Add EMBEDDING_API_KEY "
+                "(dedicated embeddings provider) or OPENAI_API_KEY to .env "
+                "to embed documents and queries."
             )
         if batch_size < 1:
             raise EmbeddingError("batch_size must be positive.")
 
-        resolved_base = (base_url or os.getenv("OPENAI_BASE_URL", "")).strip().rstrip("/")
-        if resolved_base and not resolved_base.endswith("/v1"):
-            resolved_base = f"{resolved_base}/v1"
+        # EMBEDDING_BASE_URL points to the exact API root and is used as-is,
+        # so any OpenAI-compatible endpoint works (including Google AI Studio).
+        explicit_base = (base_url or os.getenv("EMBEDDING_BASE_URL", "")).strip().rstrip("/")
+        if explicit_base:
+            resolved_base = explicit_base
+        else:
+            resolved_base = os.getenv("OPENAI_BASE_URL", "").strip().rstrip("/")
+            if resolved_base and not resolved_base.endswith("/v1"):
+                resolved_base = f"{resolved_base}/v1"
 
         try:
             from openai import OpenAI
@@ -77,7 +86,7 @@ class OpenAIEmbedder:
         try:
             response = self._client.embeddings.create(**payload)
         except Exception as exc:
-            raise EmbeddingError(f"Embedding request to OpenAI failed: {exc}") from exc
+            raise EmbeddingError(f"Embedding request failed: {exc}") from exc
 
         data = sorted(response.data, key=lambda item: item.index)
         vectors = [item.embedding for item in data]

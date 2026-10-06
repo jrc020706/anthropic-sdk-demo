@@ -6,9 +6,10 @@ sessions in SQLite so they survive restarts, answers from a local document knowl
 base hosted in **Supabase (pgvector)**, and ships reusable skills plus a full log of
 the AI prompts used to build it.
 
-The requirements come from
-[`Riwi_MultiProvider_Terminal_Chatbot_Acceptance_Criteria_Final.pdf`](Riwi_MultiProvider_Terminal_Chatbot_Acceptance_Criteria_Final.pdf);
-section 10 maps the repository to that checklist.
+The chatbot also works **100% free**: the free-tier providers **Groq** and
+**OpenRouter** reuse the same OpenAI SDK adapter, Supabase has a free plan, and
+embeddings can point at Google AI Studio's free OpenAI-compatible endpoint.
+See [Free setup](#free-setup-100).
 
 ---
 
@@ -19,15 +20,52 @@ through a documented URL. No service dependency is localhost-only.
 
 | Service | Purpose | URL | Environment variables |
 | --- | --- | --- | --- |
-| Anthropic API | Chat provider (required) | `https://api.anthropic.com` | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_BASE_URL` (optional) |
-| OpenAI API | Chat provider + RAG embeddings (required) | `https://api.openai.com/v1` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `EMBEDDING_MODEL`, `OPENAI_BASE_URL` (optional) |
-| Supabase (PostgreSQL + pgvector) | Vector database for RAG (required for RAG) | `https://<project-ref>.supabase.co` | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_TABLE` (optional) |
+| Anthropic API | Chat provider (required integration) | `https://api.anthropic.com` | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_BASE_URL` (optional) |
+| OpenAI API | Chat provider + RAG embeddings (required integration) | `https://api.openai.com/v1` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` (optional) |
+| Groq API | Free chat provider (OpenAI SDK adapter) | `https://api.groq.com/openai/v1` | `GROQ_API_KEY`, `GROQ_MODEL` |
+| OpenRouter API | Free chat provider (OpenAI SDK adapter) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` |
+| Google AI Studio | Optional free RAG embeddings | `https://generativelanguage.googleapis.com/v1beta/openai/` | `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL` |
+| Supabase (PostgreSQL + pgvector) | Vector database for RAG (required for RAG, free tier) | `https://<project-ref>.supabase.co` | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_TABLE` (optional) |
 | SQLite file | Saved chats, stored on your machine | local file `data/chats.db` | `CHAT_DB_PATH` (optional) |
 
 Documentation of each service: [Anthropic docs](https://docs.anthropic.com/),
-[OpenAI docs](https://platform.openai.com/docs/), [Supabase docs](https://supabase.com/docs).
+[OpenAI docs](https://platform.openai.com/docs/), [Groq docs](https://console.groq.com/docs),
+[OpenRouter docs](https://openrouter.ai/docs), [Google AI docs](https://ai.google.dev/docs),
+[Supabase docs](https://supabase.com/docs).
 
 No secret is written in this file. All credentials live in `.env`, which is ignored by git.
+
+### Free setup (100%)
+
+Every service the chatbot consumes has a free tier, so the whole flow can run at no cost:
+
+| Piece | Free option | Where to get it |
+| --- | --- | --- |
+| Chat provider | Groq (`llama-3.1-8b-instant`, free) or OpenRouter (`:free` models) | [console.groq.com](https://console.groq.com) / [openrouter.ai](https://openrouter.ai) |
+| Vector database | Supabase free project (pgvector included) | [supabase.com](https://supabase.com) |
+| Embeddings (optional) | Google AI Studio `text-embedding-004` (free) | [aistudio.google.com](https://aistudio.google.com) |
+
+```env
+# 1. Free chat provider (the official OpenAI SDK adapter talks to Groq)
+CHAT_PROVIDER=groq
+GROQ_API_KEY=your-free-groq-key
+GROQ_MODEL=llama-3.1-8b-instant
+
+# 2. Free vector database
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+
+# 3. Optional free embeddings instead of OpenAI
+EMBEDDING_API_KEY=your-free-google-key
+EMBEDDING_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+EMBEDDING_MODEL=text-embedding-004
+EMBEDDING_DIMENSIONS=768
+```
+
+If you use the free Google embeddings, change `vector(1536)` to `vector(768)` in
+`data/supabase/schema.sql` (table and `match_documents` signature) before running it.
+OpenAI and Anthropic remain fully integrated; you only need their API keys when you
+select those providers.
 
 ---
 
@@ -36,7 +74,8 @@ No secret is written in this file. All credentials live in `.env`, which is igno
 ### Requirements
 
 - Python 3.10+
-- An Anthropic API key and an OpenAI API key
+- A provider API key: a **free Groq or OpenRouter key** works (see
+  [Free setup](#free-setup-100)), or an Anthropic/OpenAI key
 - A hosted Supabase project (free tier is enough) for the knowledge base
 
 ### Install
@@ -63,7 +102,16 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and set at least:
+Edit `.env` and set at least one provider. With the free Groq provider:
+
+```env
+CHAT_PROVIDER=groq
+GROQ_API_KEY=your-free-groq-key
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+```
+
+Or with the official paid providers:
 
 ```env
 CHAT_PROVIDER=anthropic
@@ -110,9 +158,11 @@ Each document prints one line: `[ok]`, `[skipped]` (unsupported type or empty fi
 `[error]`. A failed document never interrupts the rest of the ingestion.
 
 Chunking defaults: **600 tokens per chunk** with **15% overlap**, snapped to paragraph,
-line or sentence boundaries. Embeddings use `text-embedding-3-small` (1536 dimensions)
-through the official OpenAI SDK. Every stored chunk carries its `source`, `document`,
-`chunk_index` and `chunk_tokens` metadata.
+line or sentence boundaries. Embeddings default to `text-embedding-3-small` (1536
+dimensions) through the official OpenAI SDK, and can be pointed at any free
+OpenAI-compatible endpoint (for example Google AI Studio's `text-embedding-004`)
+with `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL` and `EMBEDDING_MODEL`. Every stored
+chunk carries its `source`, `document`, `chunk_index` and `chunk_tokens` metadata.
 
 ---
 
@@ -141,7 +191,7 @@ python main.py --max-tokens 1500 --history-limit 10
 | `/help` | Show the command list |
 | `/status` | Active provider, model, skill, context `n/10`, session id, RAG on/off |
 | `/providers` | List the compiled providers |
-| `/provider <name>` | Switch provider (`anthropic` / `openai`) and start a new conversation |
+| `/provider <name>` | Switch provider (`anthropic` / `openai` / `groq` / `openrouter`) and start a new conversation |
 | `/model <name>` | Change the model of the current provider |
 | `/memory` | Inspect the active 10-message context window |
 | `/chats` | List saved sessions by stable id (active one marked `*`) |
@@ -154,12 +204,15 @@ python main.py --max-tokens 1500 --history-limit 10
 
 ### Provider switching
 
-The same conversation flow runs on both providers because they share one provider
-contract; the conversation logic is never duplicated.
+The same conversation flow runs on every provider because they share one provider
+contract; the conversation logic is never duplicated. `anthropic` uses the official
+Anthropic SDK adapter, while `openai`, `groq` and `openrouter` use the official
+OpenAI SDK adapter (Groq and OpenRouter are OpenAI-compatible).
 
-- Persistently: set `CHAT_PROVIDER=anthropic` or `CHAT_PROVIDER=openai` in `.env`.
-- Per run: `python main.py --provider openai`.
-- During the session: `/provider anthropic` (this starts a new conversation, so the
+- Persistently: set `CHAT_PROVIDER=groq`, `CHAT_PROVIDER=openrouter`,
+  `CHAT_PROVIDER=anthropic` or `CHAT_PROVIDER=openai` in `.env`.
+- Per run: `python main.py --provider groq --model llama-3.1-8b-instant`.
+- During the session: `/provider openai` (this starts a new conversation, so the
   provider stored in a saved session stays consistent).
 
 ### Saved chats and memory
@@ -326,7 +379,7 @@ Recoverable problems are printed in the terminal and **never terminate the chat*
 
 | Problem | Message you get |
 | --- | --- |
-| Missing `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | The exact variable to add to `.env` |
+| Missing `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GROQ_API_KEY` / `OPENROUTER_API_KEY` | The exact variable to add to `.env` |
 | Missing `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | Knowledge base disabled, chat keeps working |
 | Provider or API failure | The provider error, and the session stays open |
 | Missing Supabase table or `match_documents` | Pointer to `data/supabase/schema.sql` |
@@ -346,8 +399,8 @@ python tests/run_offline_checks.py
 # 1. Runs from the terminal following this README
 python main.py
 
-# 2. Both providers share the same flow
-/provider openai    # then /provider anthropic
+# 2. Every provider shares the same flow (free Groq works too)
+/provider openai    # then /provider anthropic, or /provider groq for the free path
 
 # 3. Memory window and saved chats
 /memory
